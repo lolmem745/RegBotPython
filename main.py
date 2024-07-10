@@ -10,7 +10,9 @@ from dataclasses import dataclass, asdict
 # Инициализация бота
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
 USER_REGISTRATION_DICT = {}
 
 # Создание и подключение к базе данных
@@ -22,13 +24,28 @@ c.execute('''CREATE TABLE IF NOT EXISTS users
              (discord_id TEXT PRIMARY KEY, riot_id TEXT, region TEXT, rank_flex TEXT, wr_flex TEXT, rank_solo TEXT, wr_solo TEXT, role1 TEXT, role2 TEXT, opgg_link TEXT)''')
 conn.commit()
 
-# Токены
+# Импорт из config.py
 TOKEN = config.discord_bot_token
 RIOT_API_KEY = config.riot_api_key
+role_id = config.role_id   # id роли для которой работает /рандом
+
 
 # Словарь с иконками
 ICON_DICT = {'7': 'Розу', '9': 'Два Меча', '18': 'Зелье', '20': 'Пирамиды', '23': 'Росток'}
+CATEGORIES_DICT = {}
 
+c.execute("SELECT Категория, Чемпионы FROM categories")
+rows = c.fetchall()
+
+for row in rows:
+    category = row[0]
+    champions_field = row[1]
+    if champions_field:
+        champions = champions_field.split('\n')  # Чемпионы разделены переносами строки
+    else:
+        champions = []
+    CATEGORIES_DICT[category] = champions
+conn.commit()
 
 @dataclass
 class UserInfo:
@@ -48,13 +65,11 @@ class UserInfo:
 
 USER_INFO_DICT: dict[str, UserInfo] = dict()
 
-
 # Функция для получения puuid аккаунта Riot
 def get_account_puuid(name, tag):
     url = f'https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{name}/{tag}?api_key={RIOT_API_KEY}'
     response = requests.get(url)
     return response.json()["puuid"]
-
 
 # Функция для получения данных об аккаунте Лиги Легенд
 def get_summoner_info_by_puuid(region, summoner_puuid):
@@ -62,21 +77,48 @@ def get_summoner_info_by_puuid(region, summoner_puuid):
     response = requests.get(url)
     return response.json()
 
-
 # Функция для получения данных о рейтинге пользователя в Лиге Легенд
 def get_ranked_info(region, summoner_id):
     url = f'https://{region}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}?api_key={RIOT_API_KEY}'
     response = requests.get(url)
     return response.json()
 
-
 # Функция для выбора случайной id иконки из словаря
 def choose_random_icon():
     random_icon = random.choice(list(ICON_DICT.keys()))
     return random_icon
 
+# Команда для вывода рандомной категории, персонажей в ней и реролла
+@bot.tree.command(name='рандом', description='Выбор случайной категории')
+async def category_randomizer(interaction: discord.Interaction):
+    if interaction.guild.get_member(interaction.user.id).get_role(role_id) is not None:
+        class RerollButtonView(discord.ui.View):
+            @discord.ui.button(label="Реролл", style=discord.ButtonStyle.primary, emoji='🎲')
+            async def reroll_button_callback(self, interaction_reroll: discord.Interaction, button: discord.ui.Button):
+                rand_category1 = get_random_category()
+                while rand_category1 == rand_category:
+                    rand_category1 = get_random_category()
+                text1 = ', '.join(f'{champ}' for champ in get_champions_by_category(rand_category1))
+                view1 = RerollButtonView()
+                await interaction.edit_original_response(content=f'Случайная категория: {rand_category1}\n\nЧемпионы в этой категории: {text1}\n⠀', view=view1)
+                await interaction_reroll.response.defer()
 
-# Основная команда, реализована через декоратор CommandTree
+        def get_random_category():
+            return random.choice(list(CATEGORIES_DICT.keys()))
+
+        # Функция для вывода списка героев по переданному значению ключа
+        def get_champions_by_category(champion_category):
+            return CATEGORIES_DICT.get(champion_category, [])
+
+        rand_category = get_random_category()
+        text = ', '.join(f'{champ}' for champ in get_champions_by_category(rand_category))
+        view = RerollButtonView()
+        await interaction.response.send_message(f'Случайная категория: {rand_category}\n\n'f'Чемпионы в этой категории: '
+                                                f'{text}\n', view=view, silent=True)
+    else:
+        await interaction.response.send_message('У вас нет прав на использование этой команды.', ephemeral=True)
+
+# Основная команда, собирает данные от пользователя и заносит в таблицу users в users.db
 @bot.tree.command(name='регистрация', description='Регистрация на турнир')
 async def input_command(interaction: discord.Interaction):
     # Добавление всех необходимых переменных в функцию
@@ -118,9 +160,9 @@ async def input_command(interaction: discord.Interaction):
                 USER_INFO_DICT[str(interaction_on_submit.user.id)].account_name, USER_INFO_DICT[str(interaction_on_submit.user.id)].account_tag = USER_INFO_DICT[str(interaction_on_submit.user.id)].name_data.split('#')
                 USER_INFO_DICT[str(interaction_on_submit.user.id)].account_puuid = get_account_puuid(USER_INFO_DICT[str(interaction_on_submit.user.id)].account_name, USER_INFO_DICT[str(interaction_on_submit.user.id)].account_tag)
                 view = SelectRoleMenu()
-                await interaction_on_submit.response.send_message(f"Введенный RiotId: {user_text}. Теперь выберите основную роль:",
-                                                                  ephemeral=True, view=view, delete_after=float(20))
-            except:
+                await interaction.edit_original_response(content=f"Введенный RiotId: {user_text}. Теперь выберите основную роль:", view=view)
+                await interaction_on_submit.response.defer()
+            except ValueError:
                 await interaction_on_submit.response.send_message(
                     f"Неверный формат RiotId. Введите команду /регистрация ещё раз. Пример RiotId: Kuzhnya#666",
                     ephemeral=True, delete_after=float(20))
@@ -130,28 +172,25 @@ async def input_command(interaction: discord.Interaction):
         async def role_select(self, interaction_select_1: discord.Interaction, select: discord.ui.Select):
             USER_INFO_DICT[str(interaction_select_1.user.id)].primary_role = select.values[0]
             view = SelectRoleMenu2()
-            await interaction_select_1.response.send_message(
-                f"Основная роль: {USER_INFO_DICT[str(interaction_select_1.user.id)].primary_role}. Теперь выберите вторую роль (другую).",
-                ephemeral=True, view=view, delete_after=float(20))
+            await interaction.edit_original_response(content=f"Основная роль: {USER_INFO_DICT[str(interaction_select_1.user.id)].primary_role}. Теперь выберите вторую роль (другую).", view=view)
+            await interaction_select_1.response.defer()
 
     class SelectRoleMenu2(discord.ui.View):
         @discord.ui.select(placeholder="Роли", custom_id="select_role_2", options=options, max_values=1)
         async def role_select(self, interaction_select_2: discord.Interaction, select: discord.ui.Select):
             USER_INFO_DICT[str(interaction_select_2.user.id)].secondary_role = select.values[0]
             view = SelectServerMenu()
-            await interaction_select_2.response.send_message(
-                f"Выбрана роль: {USER_INFO_DICT[str(interaction_select_2.user.id)].secondary_role}. Теперь выберите сервер аккаунта.", ephemeral=True, view=view, delete_after=float(20))
+            await interaction.edit_original_response(content=f"Выбрана роль: {USER_INFO_DICT[str(interaction_select_2.user.id)].secondary_role}. Теперь выберите сервер аккаунта.", view=view)
+            await interaction_select_2.response.defer()
 
-    # noinspection PyUnresolvedReferences
     class SelectServerMenu(discord.ui.View):
         @discord.ui.select(placeholder="Select", custom_id="select_role_3", options=server_options, max_values=1)
         async def role_select(self, interaction_select_3: discord.Interaction, select: discord.ui.Select):
             USER_INFO_DICT[str(interaction_select_3.user.id)].server_data = select.values[0]
             USER_INFO_DICT[str(interaction_select_3.user.id)].required_icon = choose_random_icon()
             view = CheckIconButton()
-            await interaction_select_3.response.send_message(
-                f"Сервер {USER_INFO_DICT[str(interaction_select_3.user.id)].server_data}! Пожалуйста, измените свою иконку на {ICON_DICT[USER_INFO_DICT[str(interaction_select_3.user.id)].required_icon]}, затем нажмите на кнопку. У вас две минуты.", ephemeral=True,
-                view=view, delete_after=float(120))
+            await interaction.edit_original_response(content=f"Сервер {USER_INFO_DICT[str(interaction_select_3.user.id)].server_data}! Пожалуйста, измените свою иконку на {ICON_DICT[USER_INFO_DICT[str(interaction_select_3.user.id)].required_icon]}, затем нажмите на кнопку.", view=view)
+            await interaction_select_3.response.defer()
 
     class CheckIconButton(discord.ui.View):
         @discord.ui.button(label="Готово", style=discord.ButtonStyle.primary)
@@ -175,15 +214,17 @@ async def input_command(interaction: discord.Interaction):
                          USER_INFO_DICT[str(interaction_check_button.user.id)].winrate_ranked_flex,
                          USER_INFO_DICT[str(interaction_check_button.user.id)].rank_solo, USER_INFO_DICT[str(interaction_check_button.user.id)].winrate_ranked_solo, USER_INFO_DICT[str(interaction_check_button.user.id)].primary_role, USER_INFO_DICT[str(interaction_check_button.user.id)].secondary_role, opgg_link))
                     conn.commit()
-                    await interaction_check_button.response.send_message(f"Регистрация завершена.", ephemeral=True, delete_after=float(10))
+                    await interaction.delete_original_response()
+                    await interaction_check_button.response.send_message(content="Регистрация завершена.✅", ephemeral=True, delete_after=float(10))
                 else:
-                    await interaction_check_button.response.send_message(
-                        f"Ошибка, неверная иконка. Введите команду /регистрация ещё раз.", ephemeral=True, delete_after=float(20))
+                    await interaction.delete_original_response()
+                    await interaction_check_button.response.send_message(content=f"Ошибка, неверная иконка. Введите команду /регистрация ещё раз.⚠️", ephemeral=True, delete_after=float(10))
             except sqlite3.IntegrityError:  # Эта ошибка выползает если discord_id пользователя в бд уже есть
-                await interaction_check_button.response.send_message(f"Вы уже регистрировались.", ephemeral=True, delete_after=float(20))
+                await interaction.delete_original_response()
+                await interaction_check_button.response.send_message(content=f"Вы уже регистрировались.❌", ephemeral=True, delete_after=float(10))
 
     start_view = TextInputView()  # Самый первый view, после него выводятся по порядку
-    await interaction.response.send_message("Нажмите на кнопку для начала регистрации.", view=start_view, ephemeral=True, delete_after=float(20))
+    await interaction.response.send_message("Нажмите на кнопку для начала регистрации.", view=start_view, ephemeral=True)
 
 
 @bot.event  # Этот ивент нужен для подгрузки команды через bot.tree.command

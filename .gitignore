@@ -1,3 +1,5 @@
 /config.py
 /venv/
 /.idea
+/champions.db
+/users.db
