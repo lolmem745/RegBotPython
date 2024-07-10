@@ -19,9 +19,13 @@ USER_REGISTRATION_DICT = {}
 conn = sqlite3.connect('users.db')
 c = conn.cursor()
 
-# Создание таблицы, если её нет
+# Создание таблиц, если их нет
 c.execute('''CREATE TABLE IF NOT EXISTS users
-             (discord_id TEXT PRIMARY KEY, riot_id TEXT, region TEXT, rank_flex TEXT, wr_flex TEXT, rank_solo TEXT, wr_solo TEXT, role1 TEXT, role2 TEXT, opgg_link TEXT)''')
+             (discord_id TEXT PRIMARY KEY, riot_id TEXT, region TEXT, rank_flex TEXT, 
+             wr_flex TEXT, rank_solo TEXT, wr_solo TEXT, role1 TEXT, role2 TEXT, opgg_link TEXT)''')
+conn.commit()
+c.execute('''CREATE TABLE IF NOT EXISTS categories
+             (index INTEGER PRIMARY KEY, Категория TEXT, Чемпионы TEXT)''')
 conn.commit()
 
 # Импорт из config.py
