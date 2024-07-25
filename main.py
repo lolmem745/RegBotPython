@@ -1,11 +1,10 @@
-from typing import Optional
-import discord
-from discord.ext import commands
-import requests
-import sqlite3
 import random
+import sqlite3
+from dataclasses import dataclass
+import discord
+import requests
+from discord.ext import commands
 import config
-from dataclasses import dataclass, asdict
 
 # Инициализация бота
 intents = discord.Intents.default()
@@ -62,20 +61,21 @@ server_options = [
     discord.SelectOption(label="EUW", value="euw1", default=False)
 ]
 
+
 @dataclass
 class UserInfo:
-    name_data: Optional[str] = None
-    primary_role: Optional[str] = None
-    secondary_role: Optional[str] = None
-    server_data: Optional[str] = None
-    account_name: Optional[str] = None
-    account_tag: Optional[str] = None
-    rank_solo: Optional[str] = None
-    rank_flex: Optional[str] = None
-    winrate_ranked_solo: Optional[str] = None
-    winrate_ranked_flex: Optional[str] = None
-    account_puuid: Optional[str] = None
-    required_icon: Optional[str] = None
+    name_data: str | None = None
+    primary_role: str | None = None
+    secondary_role: str | None = None
+    server_data: str | None = None
+    account_name: str | None = None
+    account_tag: str | None = None
+    rank_solo: str | None = None
+    rank_flex: str | None = None
+    winrate_ranked_solo: str | None = None
+    winrate_ranked_flex: str | None = None
+    account_puuid: str | None = None
+    required_icon: str | None = None
 
 
 UID: dict[str, UserInfo] = dict()  # USER_INFO_DICT
@@ -155,7 +155,8 @@ async def category_randomizer(interaction: discord.Interaction):
                 champions_text = ', '.join(f'{champ}' for champ in get_champions_by_category(new_rand_category))
                 new_view = RerollButtonView()
                 await interaction.edit_original_response(content=f'Случайная категория: {new_rand_category}\n\nЧемпионы'
-                                                                 f' в этой категории: {champions_text}\n⠀', view=new_view)
+                                                                 f' в этой категории: {champions_text}\n⠀',
+                                                         view=new_view)
                 await interaction_reroll.response.defer()
 
         rand_category = get_random_category()
@@ -184,7 +185,8 @@ async def input_command(interaction: discord.Interaction):
         def __init__(self, user_id):
             super().__init__(title="Форма регистрации на турнир")
             self.user_id = user_id
-            self.text_input = discord.ui.TextInput(label="Введите ваш RiotID в формате Ник#тег", placeholder="Kuzhnya#666")
+            self.text_input = discord.ui.TextInput(label="Введите ваш RiotID в формате Ник#тег",
+                                                   placeholder="Kuzhnya#666")
             self.add_item(self.text_input)
 
         async def on_submit(self, interaction_on_submit: discord.Interaction):
@@ -193,15 +195,20 @@ async def input_command(interaction: discord.Interaction):
             UID[ios_id].name_data = user_text
             try:
                 UID[ios_id].account_name, UID[ios_id].account_tag = UID[ios_id].name_data.split('#')
-                UID[ios_id].account_puuid = get_account_puuid(UID[ios_id].account_name, UID[ios_id].account_tag)
-                view = SelectRoleMenu()
-                await interaction.edit_original_response(
-                    content=f"Введенный Riot Id: {user_text}. Теперь выберите основную роль:", view=view)
-                await interaction_on_submit.response.defer()
+                if UID[ios_id].account_name is not None:
+                    if UID[ios_id].account_tag is not None:
+                        UID[ios_id].account_puuid = get_account_puuid(UID[ios_id].account_name, UID[ios_id].account_tag)
+                        view = SelectRoleMenu()
+                        await interaction.edit_original_response(
+                            content=f"Введенный Riot Id: {user_text}. Теперь выберите основную роль:", view=view)
+                        await interaction_on_submit.response.defer()
+                    else:
+                        raise ValueError(Exception)
+                else:
+                    raise ValueError(Exception)
             except ValueError:
-                await interaction_on_submit.response.send_message(
-                    f"Неверный формат Riot Id. Введите команду /регистрация ещё раз. Пример RiotId: Kuzhnya#666",
-                    ephemeral=True, delete_after=float(20))
+                await interaction.edit_original_response(content=f"Неверный формат Riot Id. Попробуйте ещё раз. Пример RiotId: Kuzhnya#666")
+                await interaction_on_submit.response.defer()
 
     class SelectRoleMenu(discord.ui.View):
         @discord.ui.select(placeholder="Роли", custom_id="select_role_1", options=options, max_values=1)
@@ -240,8 +247,9 @@ async def input_command(interaction: discord.Interaction):
         async def check_icon_1(self, interaction_check_button: discord.Interaction, button: discord.ui.Button):
             icb_id = str(interaction_check_button.user.id)
             try:
-                current_icon_id = str(get_summoner_info_by_puuid(UID[icb_id].server_data, UID[icb_id].account_puuid)['profileIconId'])
-                if current_icon_id == UID[icb_id].required_icon:  # Если иконка при нажатии кнопки совпадает с требуемой -> True
+                current_icon_id = str(
+                    get_summoner_info_by_puuid(UID[icb_id].server_data, UID[icb_id].account_puuid)['profileIconId'])
+                if current_icon_id == UID[icb_id].required_icon:
                     send_data_to_db(icb_id)
                     await interaction_check_button.response.send_message(content="✅ Регистрация завершена.",
                                                                          ephemeral=True, delete_after=float(10))
@@ -249,7 +257,8 @@ async def input_command(interaction: discord.Interaction):
                 else:
                     await interaction.edit_original_response(content=f'⚠️ Ошибка, неверная иконка. Пожалуйста, измените'
                                                                      f' свою иконку на {ICON_DICT[UID[icb_id].required_icon]},'
-                                                                     f' затем нажмите на кнопку \'Готово\'.', view=CheckIconButton())
+                                                                     f' затем нажмите на кнопку \'Готово\'.',
+                                                             view=CheckIconButton())
                     await interaction_check_button.response.defer()
             except sqlite3.IntegrityError:  # Эта ошибка выползает если discord_id пользователя в бд уже есть
                 await interaction_check_button.response.send_message(content=f"❌ Вы уже регистрировались.",
