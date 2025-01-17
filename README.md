@@ -1,10 +1,10 @@
-## Простой бот в Discord для регистрации на турнир по League of Legends
+## Simple Discord Bot for League of Legends Tournament Registration
 ---
-#### Бот реализованный с помощью библиотек discord.py, sqlite3 и requests
-Команды бота:
-1. регистрация - сбор данных пользователя с занесением в базу данных
-2. рандом - выбор из случайной категории персонажей, заранее занесенной в дб
+#### A bot implemented using the libraries discord.py, sqlite3, and requests
+Bot commands:
+1. registration - collects user data and saves it to the database.
+2. random - selects a character from a random category preloaded into the database.
 
-#### Команды большей частью реализованы с помощью классов discord.ui.View и discord.Interaction 
+#### Most commands are implemented using the discord.ui.View and discord.Interaction classes. 
 ---
-###### Сделано lolmem745 для Kuzhnya
+Created by lolmem745 for Kuzhnya
